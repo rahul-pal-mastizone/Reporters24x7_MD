@@ -1,5 +1,4 @@
-<?php include("includes/header.php"); ?>
-<?php require_once("includes/auth.php"); ?>
+<?php require_once __DIR__ . '/includes/init.php'; ?>
 <?php $showAdd = true; include("includes/topbar.php"); ?>
 <?php
 include("../config.php");

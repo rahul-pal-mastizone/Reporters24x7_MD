@@ -1,6 +1,5 @@
-<?php include("includes/header.php"); ?>
+<?php require_once __DIR__ . '/includes/init.php'; ?>
 <?php
-session_start();
 include("../config.php");
 if(!isset($_SESSION['admin_id'])) { header("Location: index.php"); exit; }
 
