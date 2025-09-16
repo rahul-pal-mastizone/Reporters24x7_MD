@@ -1,76 +1,105 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/header.php';
+function e($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function ok($m){ echo '<div class="alert alert-success mb-3">'.e($m).'</div>'; }
+function err($m){ echo '<div class="alert alert-danger mb-3">'.e($m).'</div>'; }
 
-// --- uploads helper (not used here, but harmless if kept consistent) ---
-$UPLOAD_DIR = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR;
-if (!is_dir($UPLOAD_DIR)) { @mkdir($UPLOAD_DIR, 0777, true); }
+$edit=null; $msg=null;
 
-$notice = '';
-
-// CREATE / UPDATE page
-if (isset($_POST['add'])) {
-    $title   = trim($_POST['title'] ?? '');
-    $slug    = trim($_POST['slug'] ?? '');
-    $content = trim($_POST['content'] ?? '');
-
-    if ($title === '' || $slug === '') {
-        $notice = "Title and slug are required.";
-    } else {
-        // normalize slug => lower-case, dash separated
-        $slug = strtolower(preg_replace('/[^a-z0-9\-]+/i', '-', $slug));
-
-        // Insert or Update by unique slug (prevents fatal duplicate error)
-        $stmt = $conn->prepare("
-            INSERT INTO pages (title, slug, content)
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                title   = VALUES(title),
-                content = VALUES(content)
-        ");
-        if ($stmt) {
-            $stmt->bind_param("sss", $title, $slug, $content);
-            $stmt->execute();
-            $stmt->close();
-            header("Location: pages.php?ok=1"); exit;
-        } else {
-            $notice = "DB error: " . $conn->error;
-        }
-    }
+// CREATE
+if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='create'){
+  $title = trim($_POST['title'] ?? '');
+  $slug  = trim($_POST['slug'] ?? '');
+  $content = trim($_POST['content'] ?? '');
+  if($title==='' || $slug===''){ $msg=['t'=>'e','m'=>'Title & slug required.']; }
+  else{
+    $st=$conn->prepare("INSERT INTO pages(title,slug,content) VALUES(?,?,?)");
+    if($st && $st->bind_param('sss',$title,$slug,$content) && $st->execute()){
+      $msg=['t'=>'o','m'=>'Page added.'];
+    }else{ $msg=['t'=>'e','m'=>'Could not add (duplicate slug?).']; }
+    if($st) $st->close();
+  }
 }
 
-// Fetch existing pages
-$pages = $conn->query("SELECT id, title, slug FROM pages ORDER BY id DESC");
+// LOAD EDIT
+if(isset($_GET['edit'])){
+  $id=(int)$_GET['edit'];
+  $st=$conn->prepare("SELECT * FROM pages WHERE id=?");
+  $st->bind_param('i',$id); $st->execute();
+  $edit=$st->get_result()->fetch_assoc(); $st->close();
+}
 
-include __DIR__ . '/includes/header.php';
-include __DIR__ . '/includes/topbar.php';
+// UPDATE
+if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='update'){
+  $id=(int)($_POST['id']??0);
+  $title=trim($_POST['title']??'');
+  $slug=trim($_POST['slug']??'');
+  $content=trim($_POST['content']??'');
+  if($id<=0||$title===''||$slug===''){ $msg=['t'=>'e','m'=>'All fields required.']; }
+  else{
+    $st=$conn->prepare("UPDATE pages SET title=?,slug=?,content=? WHERE id=?");
+    if($st && $st->bind_param('sssi',$title,$slug,$content,$id) && $st->execute()){
+      $msg=['t'=>'o','m'=>'Page updated.']; $edit=null;
+    }else{ $msg=['t'=>'e','m'=>'Could not update (duplicate slug?).']; }
+    if($st) $st->close();
+  }
+}
+
+// DELETE
+if(isset($_GET['delete'])){
+  $id=(int)$_GET['delete'];
+  $st=$conn->prepare("DELETE FROM pages WHERE id=?");
+  $st->bind_param('i',$id);
+  if($st->execute()) $msg=['t'=>'o','m'=>'Page deleted.'];
+  $st->close();
+}
+
+$rows=$conn->query("SELECT * FROM pages ORDER BY id DESC");
 ?>
-<div class="container-fluid p-3">
-    <a href="dashboard.php" class="btn btn-secondary btn-sm mb-3">← Back to Dashboard</a>
-    <?php if (!empty($_GET['ok'])): ?>
-        <div class="alert alert-success">Saved successfully.</div>
-    <?php elseif (!empty($notice)): ?>
-        <div class="alert alert-warning mb-2"><?= e($notice) ?></div>
+<div class="container-fluid px-3 py-3">
+  <a href="dashboard.php" class="btn btn-secondary btn-sm mb-3">← Back to Dashboard</a>
+
+  <h3 class="mb-3">Manage Pages</h3>
+  <?php if($msg){ $msg['t']==='o'?ok($msg['m']):err($msg['m']); } ?>
+
+  <form method="post" class="row gy-2 gx-2 mb-4">
+    <?php if($edit): ?>
+      <input type="hidden" name="action" value="update">
+      <input type="hidden" name="id" value="<?= e($edit['id']) ?>">
+      <div class="col-md-3"><input class="form-control" name="title" value="<?= e($edit['title']) ?>" required></div>
+      <div class="col-md-3"><input class="form-control" name="slug" value="<?= e($edit['slug']) ?>" required></div>
+      <div class="col-12"><textarea class="form-control" name="content" rows="6" required><?= e($edit['content']) ?></textarea></div>
+      <div class="col-md-3 mt-2 d-flex gap-2">
+        <button class="btn btn-primary w-100">Save</button>
+        <a href="pages.php" class="btn btn-outline-secondary w-100">Cancel</a>
+      </div>
+    <?php else: ?>
+      <input type="hidden" name="action" value="create">
+      <div class="col-md-3"><input class="form-control" name="title" placeholder="Page Title" required></div>
+      <div class="col-md-3"><input class="form-control" name="slug" placeholder="about, mission" required></div>
+      <div class="col-12"><textarea class="form-control" name="content" rows="6" placeholder="Page Content" required></textarea></div>
+      <div class="col-md-3 mt-2"><button class="btn btn-primary w-100">Add Page</button></div>
     <?php endif; ?>
+  </form>
 
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <h4 class="m-0">Manage Pages</h4>
-        <a href="#add" class="btn btn-success btn-sm">+ Add New</a>
-    </div>
-
-    <form id="add" method="POST" class="mb-4">
-        <div class="row g-2">
-            <div class="col-md-3"><input name="title" class="form-control" placeholder="Page Title" required></div>
-            <div class="col-md-3"><input name="slug"  class="form-control" placeholder="Slug (about, mission)" required></div>
-            <div class="col-md-4"><textarea name="content" class="form-control" placeholder="Page Content"></textarea></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100" name="add">Add Page</button></div>
-        </div>
-    </form>
-
-    <h6>Existing Pages</h6>
-    <ul class="mb-0">
-        <?php while($p = $pages->fetch_assoc()): ?>
-            <li><?= e($p['title']) ?> <span class="text-muted">(<?= e($p['slug']) ?>)</span></li>
+  <div class="table-responsive">
+    <table class="table table-dark table-striped align-middle">
+      <thead><tr><th>#</th><th>Title</th><th>Slug</th><th>Action</th></tr></thead>
+      <tbody>
+        <?php while($r=$rows->fetch_assoc()): ?>
+        <tr>
+          <td><?= $r['id'] ?></td>
+          <td><?= e($r['title']) ?></td>
+          <td><code><?= e($r['slug']) ?></code></td>
+          <td class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-info" href="pages.php?edit=<?= $r['id'] ?>">Edit</a>
+            <a class="btn btn-sm btn-outline-danger" href="pages.php?delete=<?= $r['id'] ?>" onclick="return confirm('Delete this page?')">Delete</a>
+          </td>
+        </tr>
         <?php endwhile; ?>
-    </ul>
+      </tbody>
+    </table>
+  </div>
 </div>
-<?php include __DIR__ . '/includes/footer.php'; ?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

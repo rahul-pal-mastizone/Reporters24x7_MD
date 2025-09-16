@@ -1,28 +1,31 @@
 <?php
-/**
- * Global config – safe to include multiple times
- * Fixes: "Cannot redeclare e()" + session warnings + missing uploads dir
- */
-if (!defined('APP_STARTED')) {
-    define('APP_STARTED', true);
-
-    // ---- DB ---------------------------------------------------------------
-    mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    $conn = new mysqli('localhost', 'root', '', 'client_website');
-    $conn->set_charset('utf8mb4');
-
-    // ---- Session ----------------------------------------------------------
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-
-    // ---- Paths / URLs -----------------------------------------------------
-    define('APP_ROOT', __DIR__);                       // filesystem path to /project
-    define('UPLOAD_DIR', APP_ROOT . '/uploads/');      // /project/uploads/
-    if (!is_dir(UPLOAD_DIR)) { @mkdir(UPLOAD_DIR, 0777, true); }
-
-    // ---- Helpers ----------------------------------------------------------
-    if (!function_exists('e')) {
-        function e($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-    }
+// Safe session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
 }
+
+// --- DB connection (idempotent) ---
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    $DB_HOST = 'localhost';
+    $DB_USER = 'root';
+    $DB_PASS = '';
+    $DB_NAME = 'client_website';
+
+    $conn = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
+    if ($conn->connect_error) {
+        die('DB connection failed: ' . $conn->connect_error);
+    }
+    $conn->set_charset('utf8mb4');
+}
+
+// --- Helpers (idempotent) ---
+if (!function_exists('e')) {
+    function e($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+}
+if (!function_exists('redirect')) {
+    function redirect(string $url) { header("Location: {$url}"); exit; }
+}
+
+// Optional constants (used by uploads elsewhere)
+if (!defined('BASE_PATH'))  define('BASE_PATH', __DIR__);
+if (!defined('UPLOAD_DIR')) define('UPLOAD_DIR', BASE_PATH . '/uploads');
